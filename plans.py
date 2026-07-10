@@ -3,35 +3,23 @@ import pandas as pd
 import re
 from collections import Counter
 
-# 全局强力CSS，整页全覆盖浅蓝色，消除底部白色空白 + 新增输入框样式
+# 强力CSS样式，强制隐藏右上角头部所有按钮、Deploy文字、三点菜单，压缩顶部空白
 st.markdown("""
 <style>
-    html, body, .stApp {
-        background-color: #e6f2ff !important;
-        min-height: 100vh !important;
-    }
+    /* 整体内容上移 */
     .block-container {
-        background-color: transparent !important;
         padding-top: 0.3rem !important;
         padding-bottom: 0rem !important;
     }
-    /* 隐藏顶部标题栏 */
+    /* 隐藏整个顶部导航栏区域 */
     header[data-testid="stHeader"] {
         display: none !important;
     }
+    /* 备用隐藏规则，防止部分版本兼容问题 */
     .stDeployButton,
     [data-testid="stHeaderActionElements"],
     div[class*="stHeader"] {
         display: none !important;
-    }
-    /* 输入框边框加粗醒目 */
-    .stTextInput > div > div > input {
-        border-width: 2px !important;
-        border-color: #3366bb !important;
-    }
-    /* 输入框上方文字加粗变饱满 */
-    .stTextInput label p {
-        font-weight: 700 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -72,17 +60,13 @@ def get_recommendation(history):
     
     return result
 
-# 统计连中、连败数据函数，仅增加跳过待分析判断，其余统计逻辑完全原样
+# 统计连中、连败数据函数
 def calc_streak_info(history):
     max_hit_streak = 0
     max_miss_streak = 0
     curr_hit = 0
     curr_miss = 0
     for row in history:
-        # 仅新增：待分析记录直接跳过，不参与任何连中/连败计数
-        if row["pred"] == "待分析":
-            continue
-        # 下面原有统计逻辑完全不动，一丝未改
         if row["hit"]:
             curr_hit += 1
             curr_miss = 0
@@ -131,8 +115,8 @@ with col1:
         st.markdown(f"<div style='{style_value}'>{streak_data['max_miss']}</div>", unsafe_allow_html=True)
     
     st.divider()
-    # 历史复盘标题：margin-top设为负数，紧贴上方分隔横线，紧凑布局
-    st.markdown("<h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>📜 历史复盘 (记录锁定)</h3>", unsafe_allow_html=True)
+    # 历史复盘标题：加粗、加深黑色字体
+    st.markdown("<h3 style='font-weight:bold; color:#000000; margin-top:4px;'>📜 历史复盘 (记录锁定)</h3>", unsafe_allow_html=True)
     
     if st.session_state.history_list:
         data = []
@@ -151,16 +135,12 @@ with col1:
 with col2:
     st.subheader("💡 实时预判")
     if next_pred != "待分析":
-        # 文字保持深色，推荐号码改为红色加粗，布局间距和原metric一致
-        st.markdown(f"""
-        <div style="font-size: 18px; color:#222222; margin-bottom:4px;">下一期推荐号码:</div>
-        <div style="font-size:42px; color:#ff0000; font-weight:bold;">{next_pred}</div>
-        """, unsafe_allow_html=True)
+        st.metric("下一期推荐号码:", next_pred)
     else:
         st.info("💡 录入 3 期数据后开启预判")
 
     with st.form("input_form", clear_on_submit=True):
-        user_input = st.text_input("请输入本期开奖 (如: 91934):")
+        user_input = st.text_input("粘贴本期开奖 (如: 91934):")
         submitted = st.form_submit_button("确认录入本期结果")
         
         if submitted and user_input:
