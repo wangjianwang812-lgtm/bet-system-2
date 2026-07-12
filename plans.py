@@ -295,7 +295,7 @@ def get_recommendation(history):
 
     return final_result
 
-# 连中连败统计函数【无任何改动】
+# 【已修复报错】连中连败统计函数，变量名统一匹配
 def calc_streak_info(history):
     max_hit_streak = 0
     max_miss_streak = 0
@@ -317,8 +317,8 @@ def calc_streak_info(history):
     return {
         "curr_hit": curr_hit,
         "curr_miss": curr_miss,
-        "max_hit": max_hit,
-        "max_miss": max_miss
+        "max_hit": max_hit_streak,
+        "max_miss": max_miss_streak
     }
 
 # 页面布局 仅修改统计四块展示样式，其余全部原逻辑不动
