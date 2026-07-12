@@ -77,7 +77,7 @@ st.set_page_config(page_title="实时纠错系统 (位移矩阵版)", layout="wi
 if 'history_list' not in st.session_state:
     st.session_state.history_list = []
 
-# 升级优化算法：原有全部核心逻辑完整保留，仅叠加稳盘增强规则
+# 升级优化算法：5期窗口固定包含最新一期，原有全部核心逻辑完整保留，新增强制携带当期数字规则
 def get_recommendation(history):
     window_len = len(history)
     if window_len < 3:
@@ -93,7 +93,7 @@ def get_recommendation(history):
         else:
             break
 
-    # 分级窗口：0连错=5期；1连错=7期；>=2连错=10期扩容缓冲【原代码无修改】
+    # 分级窗口：0连错=末尾5期（天然包含最新一期）；1连错=7期；>=2连错=10期【原代码无修改】
     if curr_miss == 0:
         full_window = history[-5:]
     elif curr_miss == 1:
@@ -113,7 +113,7 @@ def get_recommendation(history):
         period_digits.append(digits)
         all_digits.extend(digits)
 
-        # =====优化1：时间加权，越新期数权重越高，放大短期走势影响=====
+        # =====优化1：时间加权，越新期数权重越高，放大最新一期影响力=====
         reverse_index = total_window_count - 1 - idx
         if reverse_index == 0:
             weight = 0.40
@@ -204,6 +204,9 @@ def get_recommendation(history):
     last_item = full_window[-1]
     last_period_digits = period_digits[-1]
     raw_candidate = ""
+    # 提取窗口内【最新一期】全部数字（full_window[-1]就是刚录入的最新期，固定存在5期窗口末尾）
+    new_period_digits = set([int(c) for c in full_window[-1]["data"][-4:]])
+
     if not last_item["hit"]:
         if curr_miss == 1:
             # 仅错1期：原冷2+上期残留逻辑不变，小幅压低冷号权重
@@ -220,7 +223,7 @@ def get_recommendation(history):
             combine = [hot_part[0], hot_part[2], cold_part[0]]
             raw_candidate = "".join(sorted([str(x) for x in combine]))
     else:
-        # 连对正常输出：2热1冷原生逻辑完整保留
+        # ==========连中平稳段核心改动：原生2热1冷逻辑不变，强制最终号码包含最新一期至少1个数字==========
         hot_pool = sorted([(d, s) for d, s in total_score.items()], key=lambda x: x[1], reverse=True)[:4]
         miss_pool = sorted([(d, miss_score[d]) for d in range(10)], key=lambda x: x[1], reverse=True)[:4]
         hot_digits = set([x[0] for x in hot_pool])
@@ -246,7 +249,16 @@ def get_recommendation(history):
                 if d not in final:
                     final.append(d)
                     break
-        raw_candidate = "".join(sorted([str(d) for d in final[:3]]))
+        temp_raw = final[:3]
+        # 强制校验：如果初选组合不含最新一期数字，替换一个为当期数字
+        temp_set = set(temp_raw)
+        cross = temp_set & new_period_digits
+        if len(cross) == 0:
+            # 替换分数最低的数字为最新一期里总分最高的数字
+            new_top = sorted([(d, total_score[d]) for d in new_period_digits], key=lambda x:x[1], reverse=True)[0][0]
+            min_idx = temp_raw.index(min(temp_raw, key=lambda x:total_score[x]))
+            temp_raw[min_idx] = new_top
+        raw_candidate = "".join(sorted([str(d) for d in temp_raw]))
 
     # =====优化3：极端低概率形态过滤，剔除容易挂号的组合=====
     def is_bad_pattern(num_str):
@@ -261,7 +273,7 @@ def get_recommendation(history):
         # 顺子 123 234 345等连续三位
         sort_n = sorted(nums)
         is_seq = (sort_n[1] - sort_n[0] ==1) and (sort_n[2] - sort_n[1] ==1)
-        # 三重对子 112、779 类两重重复
+        # 双重对子 112、779 类两重重复
         cnt = Counter(nums)
         double_pair = any(v >=2 for v in cnt.values())
         return all_big or all_small or all_odd or all_even or is_seq or double_pair
@@ -305,8 +317,8 @@ def calc_streak_info(history):
     return {
         "curr_hit": curr_hit,
         "curr_miss": curr_miss,
-        "max_hit": max_hit_streak,
-        "max_miss": max_miss_streak
+        "max_hit": max_hit,
+        "max_miss": max_miss
     }
 
 # 页面布局 仅修改统计四块展示样式，其余全部原逻辑不动
