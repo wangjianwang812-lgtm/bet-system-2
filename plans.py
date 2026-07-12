@@ -77,7 +77,7 @@ st.set_page_config(page_title="实时纠错系统 (位移矩阵版)", layout="wi
 if 'history_list' not in st.session_state:
     st.session_state.history_list = []
 
-# 升级优化算法：5期窗口固定包含最新一期，原有全部核心逻辑完整保留，新增强制携带当期数字规则
+# 温和优化算法：保留全部原生逻辑，移除强制带当期数字，稳盘不加激进限制
 def get_recommendation(history):
     window_len = len(history)
     if window_len < 3:
@@ -104,7 +104,7 @@ def get_recommendation(history):
     all_digits = []
     period_digits = []
     period_type = []
-    window_weight_map = []  # 新增：存储每期数字+时间权重，原有提取逻辑不变
+    window_weight_map = []
     total_window_count = len(full_window)
 
     for idx, item in enumerate(full_window):
@@ -113,16 +113,16 @@ def get_recommendation(history):
         period_digits.append(digits)
         all_digits.extend(digits)
 
-        # =====优化1：时间加权，越新期数权重越高，放大最新一期影响力=====
+        # 时间加权，温和权重，不极端放大最新一期
         reverse_index = total_window_count - 1 - idx
         if reverse_index == 0:
-            weight = 0.40
+            weight = 0.30
         elif reverse_index == 1:
             weight = 0.25
         elif reverse_index == 2:
-            weight = 0.15
+            weight = 0.20
         elif reverse_index == 3:
-            weight = 0.10
+            weight = 0.15
         else:
             weight = 0.10
         window_weight_map.append({"digits": digits, "weight": weight})
@@ -151,7 +151,7 @@ def get_recommendation(history):
             for c in curr_nums:
                 transfer[p][c] += 1
 
-    # 阶梯遗漏计分【原有公式保留】+ 优化2：遗漏分值封顶，防止无限追冷
+    # 阶梯遗漏计分 + 遗漏分值封顶
     last_occur = {d: -1 for d in range(10)}
     for win_idx, item in enumerate(window_weight_map):
         for d in item["digits"]:
@@ -165,11 +165,10 @@ def get_recommendation(history):
         elif miss <= 4:
             add = miss * 0.6
         else:
-            # 超过4期后分值封顶，不再持续上涨，规避长期死追冷号
             add = 4 * 0.6
         miss_score[d] = add
 
-    # 热度权重随连败动态降低【原逻辑保留】+ 叠加时间加权修正热度
+    # 热度权重随连败动态降低
     hot_counter = Counter()
     for item in window_weight_map:
         w = item["weight"]
@@ -200,30 +199,26 @@ def get_recommendation(history):
     for d in range(10):
         total_score[d] = transfer_score[d] + hot_score[d] + miss_score[d] + type_bonus[d]
 
-    # 分级纠错逻辑【原分支全部保留，仅内部增加连败均衡风控】
+    # 分级纠错逻辑【原版完整保留，删除强制携带当期数字逻辑】
     last_item = full_window[-1]
     last_period_digits = period_digits[-1]
     raw_candidate = ""
-    # 提取窗口内【最新一期】全部数字（full_window[-1]就是刚录入的最新期，固定存在5期窗口末尾）
-    new_period_digits = set([int(c) for c in full_window[-1]["data"][-4:]])
 
     if not last_item["hit"]:
         if curr_miss == 1:
-            # 仅错1期：原冷2+上期残留逻辑不变，小幅压低冷号权重
             cold_list = sorted([(d, miss_score[d]) for d in range(10)], key=lambda x: x[1], reverse=True)[:2]
             cold_nums = [x[0] for x in cold_list]
             reserve_num = last_period_digits[0]
             combine = list(set(cold_nums + [reserve_num]))[:3]
             raw_candidate = "".join(sorted([str(x) for x in combine]))
         else:
-            # 两连错以上：强制冷热均衡搭配，避免极端全冷组合
             mix_sort = sorted(total_score.items(), key=lambda x: x[1], reverse=True)
             hot_part = [d for d, s in mix_sort[:4]]
             cold_part = [d for d, s in mix_sort[-3:]]
             combine = [hot_part[0], hot_part[2], cold_part[0]]
             raw_candidate = "".join(sorted([str(x) for x in combine]))
     else:
-        # ==========连中平稳段核心改动：原生2热1冷逻辑不变，强制最终号码包含最新一期至少1个数字==========
+        # 原版2热1冷逻辑，无强制替换当期数字
         hot_pool = sorted([(d, s) for d, s in total_score.items()], key=lambda x: x[1], reverse=True)[:4]
         miss_pool = sorted([(d, miss_score[d]) for d in range(10)], key=lambda x: x[1], reverse=True)[:4]
         hot_digits = set([x[0] for x in hot_pool])
@@ -249,37 +244,23 @@ def get_recommendation(history):
                 if d not in final:
                     final.append(d)
                     break
-        temp_raw = final[:3]
-        # 强制校验：如果初选组合不含最新一期数字，替换一个为当期数字
-        temp_set = set(temp_raw)
-        cross = temp_set & new_period_digits
-        if len(cross) == 0:
-            # 替换分数最低的数字为最新一期里总分最高的数字
-            new_top = sorted([(d, total_score[d]) for d in new_period_digits], key=lambda x:x[1], reverse=True)[0][0]
-            min_idx = temp_raw.index(min(temp_raw, key=lambda x:total_score[x]))
-            temp_raw[min_idx] = new_top
-        raw_candidate = "".join(sorted([str(d) for d in temp_raw]))
+        raw_candidate = "".join(sorted([str(d) for d in final[:3]]))
 
-    # =====优化3：极端低概率形态过滤，剔除容易挂号的组合=====
+    # 极端低概率形态过滤保留
     def is_bad_pattern(num_str):
         nums = [int(c) for c in num_str]
         a,b,c = nums
-        # 全大(6-9) / 全小(0-3)
         all_big = all(x >=6 for x in nums)
         all_small = all(x <=3 for x in nums)
-        # 全奇 / 全偶
         all_odd = all(x%2 ==1 for x in nums)
         all_even = all(x%2 ==0 for x in nums)
-        # 顺子 123 234 345等连续三位
         sort_n = sorted(nums)
         is_seq = (sort_n[1] - sort_n[0] ==1) and (sort_n[2] - sort_n[1] ==1)
-        # 双重对子 112、779 类两重重复
         cnt = Counter(nums)
         double_pair = any(v >=2 for v in cnt.values())
         return all_big or all_small or all_odd or all_even or is_seq or double_pair
 
     final_result = raw_candidate
-    # 如果原生号码是差形态，同分数替换次优数字
     if is_bad_pattern(raw_candidate):
         all_rank = sorted(total_score.items(), key=lambda x:x[1], reverse=True)
         pool = [str(d) for d,s in all_rank]
@@ -295,7 +276,7 @@ def get_recommendation(history):
 
     return final_result
 
-# 【已修复报错】连中连败统计函数，变量名统一匹配
+# 修复后的连中连败统计函数
 def calc_streak_info(history):
     max_hit_streak = 0
     max_miss_streak = 0
@@ -321,7 +302,7 @@ def calc_streak_info(history):
         "max_miss": max_miss_streak
     }
 
-# 页面布局 仅修改统计四块展示样式，其余全部原逻辑不动
+# 页面布局不变
 st.markdown("<h2 style='margin-top:0; margin-bottom:12px;'>🎯 实时纠错系统 (位移矩阵版)</h2>", unsafe_allow_html=True)
 col1, col2 = st.columns([0.65, 0.35])
 next_pred = get_recommendation(st.session_state.history_list)
@@ -332,7 +313,6 @@ with col1:
     streak_data = calc_streak_info(st.session_state.history_list)
     s1, s2, s3, s4 = st.columns(4)
 
-    # 彩色圆角统计块【仅UI渲染改动，数值逻辑不变】
     with s1:
         st.markdown(f"""
         <div class="stat-card stat-green">
@@ -377,7 +357,7 @@ with col1:
     else:
         st.info("暂无数据，请在右侧录入...")
 
-# 右侧预判、录入、清空【表单输入框、提交判断、清空逻辑完全原样，无改动】
+# 右侧录入区域不变
 with col2:
     st.subheader("💡 实时预判")
     if next_pred != "待分析":
