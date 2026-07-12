@@ -3,7 +3,7 @@ import pandas as pd
 import re
 from collections import Counter, defaultdict
 
-# 全局浅蓝色CSS样式【仅美化UI，业务无改动】
+# 全局浅蓝色CSS样式
 st.markdown("""
 <style>
     html, body, .stApp {
@@ -25,7 +25,6 @@ st.markdown("""
     div[class*="stHeader"] {
         display: none !important;
     }
-    /* 输入框原生保留，仅柔和边框 */
     .stTextInput > div > div > input {
         border-width: 1px !important;
         border-color: #cbd5e1 !important;
@@ -36,11 +35,9 @@ st.markdown("""
         font-weight: 600 !important;
         font-size:16px;
     }
-    /* 卡片统一圆角柔和阴影 */
     div[data-testid="stHorizontalBlock"] {
         gap:12px;
     }
-    /* 统计色块圆角彩色块，和你效果图一致 */
     .stat-card {
         border-radius:14px;
         padding:16px 8px;
@@ -53,13 +50,11 @@ st.markdown("""
     .stat-red {background:#f23c3c;}
     .stat-label {font-size:16px;margin-bottom:6px;}
     .stat-value {font-size:40px;font-weight:900;}
-    /* 推荐号码红字样式 */
     .pred-num {
         font-size:42px;
         color:#f23c3c;
         font-weight:900;
     }
-    /* 表格美化 */
     .stTable table {
         border-radius:12px;
         overflow:hidden;
@@ -70,20 +65,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 页面基础配置
 st.set_page_config(page_title="实时纠错系统 (位移矩阵版)", layout="wide")
 
-# 初始化历史存储
 if 'history_list' not in st.session_state:
     st.session_state.history_list = []
 
-# 【还原初始原版算法】移除所有新增加权、强制带号、遗漏封顶，回归21连中原版逻辑
+# 纯初代原版算法，仅修复多连挂重复出号问题，其余全部原生逻辑不变
 def get_recommendation(history):
     window_len = len(history)
     if window_len < 3:
         return "待分析"
 
-    # 统计当前连败数【原版无改动】
     curr_miss = 0
     for row in reversed(history):
         if row["pred"] == "待分析":
@@ -93,7 +85,6 @@ def get_recommendation(history):
         else:
             break
 
-    # 分级窗口：0连错5期 /1连错7期 /≥2连错10期 原版逻辑不变
     if curr_miss == 0:
         full_window = history[-5:]
     elif curr_miss == 1:
@@ -109,7 +100,6 @@ def get_recommendation(history):
         digits = [int(c) for c in num_str]
         period_digits.append(digits)
         all_digits.extend(digits)
-        # 判断四码形态 原版不变
         cnt = Counter(digits)
         sort_cnt = sorted(cnt.values(), reverse=True)
         if sort_cnt[0] == 4:
@@ -124,7 +114,6 @@ def get_recommendation(history):
             t = "ABCD"
         period_type.append(t)
 
-    # 马尔可夫近2期数字联动 原版完整保留
     transfer = defaultdict(Counter)
     for i in range(2, len(period_digits)):
         prev_nums = period_digits[i-2] + period_digits[i-1]
@@ -133,7 +122,6 @@ def get_recommendation(history):
             for c in curr_nums:
                 transfer[p][c] += 1
 
-    # 原版阶梯遗漏计分（恢复无限递增，删除封顶优化）
     last_occur = {d: -1 for d in range(10)}
     for idx, item in enumerate(full_window):
         for c in item["data"][-4:]:
@@ -151,12 +139,10 @@ def get_recommendation(history):
             add = 4 * 0.6 + (miss - 4) * 0.25
         miss_score[d] = add
 
-    # 原版均等热度统计，删除时间加权修正
     hot_counter = Counter(all_digits)
     hot_weight = 0.2 if curr_miss == 0 else 0.12
     hot_score = {d: hot_counter.get(d, 0) * hot_weight for d in range(10)}
 
-    # 转移矩阵辅助分 原版不动
     transfer_score = {d: 0 for d in range(10)}
     last2_nums = period_digits[-1] + period_digits[-2]
     for prev_d in last2_nums:
@@ -164,7 +150,6 @@ def get_recommendation(history):
         for curr_d, cnt in transfer[prev_d].items():
             transfer_score[curr_d] += (cnt / total) * 0.7
 
-    # 主流形态加分 原版不动
     type_cnt = Counter(period_type)
     main_type = max(type_cnt, key=type_cnt.get)
     type_bonus = {d: 0 for d in range(10)}
@@ -173,30 +158,32 @@ def get_recommendation(history):
             for d in period_digits[i]:
                 type_bonus[d] += 0.2
 
-    # 总分合并 原版四项相加不变
     total_score = {}
     for d in range(10):
         total_score[d] = transfer_score[d] + hot_score[d] + miss_score[d] + type_bonus[d]
 
-    # 分级纠错逻辑 完全还原最初版本，删除强制携带当期数字代码
     last_item = full_window[-1]
     last_period_digits = period_digits[-1]
     raw_candidate = ""
     if not last_item["hit"]:
         if curr_miss == 1:
-            # 仅错1期：冷2 + 上期留存数字 原版逻辑
+            # 单挂1期 完全保留原版逻辑
             cold_list = sorted([(d, miss_score[d]) for d in range(10)], key=lambda x: x[1], reverse=True)[:2]
             cold_nums = [x[0] for x in cold_list]
             reserve_num = last_period_digits[0]
             combine = list(set(cold_nums + [reserve_num]))[:3]
             raw_candidate = "".join(sorted([str(x) for x in combine]))
         else:
-            # 两连错混合冷热
-            mix_sort = sorted(total_score.items(), key=lambda x: x[1], reverse=True)
-            mix_3 = [str(d) for d, s in mix_sort[:3]]
-            raw_candidate = "".join(sorted(mix_3))
+            # ==========仅修改这里：三连及以上强制冷热混合，不再只取前三高分避免重复号连挂==========
+            hot_sort = sorted(total_score.items(), key=lambda x: x[1], reverse=True)
+            cold_sort = sorted(total_score.items(), key=lambda x: x[1])
+            # 取2热1冷均衡搭配，打破持续追高分重复数字
+            hot1, hot2 = hot_sort[0][0], hot_sort[1][0]
+            cold1 = cold_sort[0][0]
+            mix_3 = sorted([hot1, hot2, cold1])
+            raw_candidate = "".join([str(i) for i in mix_3])
     else:
-        # 连中2热1冷 原版核心选号逻辑（当初21连中依靠这段）
+        # 连中平稳段 完全原版2热1冷逻辑不动
         hot_pool = sorted([(d, s) for d, s in total_score.items()], key=lambda x: x[1], reverse=True)[:4]
         miss_pool = sorted([(d, miss_score[d]) for d in range(10)], key=lambda x: x[1], reverse=True)[:4]
         hot_digits = set([x[0] for x in hot_pool])
@@ -223,38 +210,10 @@ def get_recommendation(history):
                     final.append(d)
                     break
         raw_candidate = "".join(sorted([str(d) for d in final[:3]]))
+    # 无任何过滤，原生结果直接返回
+    return raw_candidate
 
-    # 保留轻微形态过滤，只剔除极低概率组合，不干扰原版走势
-    def is_bad_pattern(num_str):
-        nums = [int(c) for c in num_str]
-        a,b,c = nums
-        all_big = all(x >=6 for x in nums)
-        all_small = all(x <=3 for x in nums)
-        all_odd = all(x%2 ==1 for x in nums)
-        all_even = all(x%2 ==0 for x in nums)
-        sort_n = sorted(nums)
-        is_seq = (sort_n[1] - sort_n[0] ==1) and (sort_n[2] - sort_n[1] ==1)
-        cnt = Counter(nums)
-        double_pair = any(v >=2 for v in cnt.values())
-        return all_big or all_small or all_odd or all_even or is_seq or double_pair
-
-    final_result = raw_candidate
-    if is_bad_pattern(raw_candidate):
-        all_rank = sorted(total_score.items(), key=lambda x:x[1], reverse=True)
-        pool = [str(d) for d,s in all_rank]
-        temp = []
-        for num in pool:
-            if num not in temp:
-                temp.append(num)
-            if len(temp)>=3:
-                break
-        alter = "".join(sorted(temp))
-        if not is_bad_pattern(alter):
-            final_result = alter
-
-    return final_result
-
-# 修复变量报错的统计函数，判断逻辑完全不变
+# 修复报错的统计函数
 def calc_streak_info(history):
     max_hit_streak = 0
     max_miss_streak = 0
@@ -280,17 +239,15 @@ def calc_streak_info(history):
         "max_miss": max_miss_streak
     }
 
-# 页面布局、UI、录入模块完全不变
+# 页面布局完全不变
 st.markdown("<h2 style='margin-top:0; margin-bottom:12px;'>🎯 实时纠错系统 (位移矩阵版)</h2>", unsafe_allow_html=True)
 col1, col2 = st.columns([0.65, 0.35])
 next_pred = get_recommendation(st.session_state.history_list)
 
-# 左侧统计+历史表格
 with col1:
     st.subheader("📈 连中/连败统计")
     streak_data = calc_streak_info(st.session_state.history_list)
     s1, s2, s3, s4 = st.columns(4)
-
     with s1:
         st.markdown(f"""
         <div class="stat-card stat-green">
@@ -319,7 +276,6 @@ with col1:
             <div class="stat-value">{streak_data['max_miss']}</div>
         </div>
         """, unsafe_allow_html=True)
-
     st.divider()
     st.markdown("<h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>📜 历史复盘 (记录锁定)</h3>", unsafe_allow_html=True)
     if st.session_state.history_list:
@@ -335,7 +291,6 @@ with col1:
     else:
         st.info("暂无数据，请在右侧录入...")
 
-# 右侧录入面板完全不变
 with col2:
     st.subheader("💡 实时预判")
     if next_pred != "待分析":
@@ -345,7 +300,6 @@ with col2:
         """, unsafe_allow_html=True)
     else:
         st.info("💡 录入 3 期数据后开启预判")
-
     with st.form("input_form", clear_on_submit=True):
         user_input = st.text_input("请输入本期开奖 (如: 91934):")
         submitted = st.form_submit_button("确认录入本期结果")
