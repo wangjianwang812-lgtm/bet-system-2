@@ -70,24 +70,22 @@ st.set_page_config(page_title="实时纠错系统 (位移矩阵版)", layout="wi
 if 'history_list' not in st.session_state:
     st.session_state.history_list = []
 
-# 初代原版核心不变，连败场景新增规避上期错误号码逻辑
+# 优化版算法：强化多连败规避，平稳连中原版逻辑不变
 def get_recommendation(history):
     window_len = len(history)
     if window_len < 3:
         return "待分析"
 
     curr_miss = 0
-    miss_pred_set = set()
-    # 统计连败，同时收集最近2次挂单的推荐数字，后续规避
+    all_miss_pred_set = set()
+    # 统计全部连续挂单的推荐数字，全部纳入规避池
     for idx, row in enumerate(reversed(history)):
         if row["pred"] == "待分析":
             continue
         if not row["hit"]:
             curr_miss += 1
-            # 仅记录最近两次错误推荐数字
-            if curr_miss <= 2:
-                for c in row["pred"]:
-                    miss_pred_set.add(int(c))
+            for c in row["pred"]:
+                all_miss_pred_set.add(int(c))
         else:
             break
 
@@ -144,10 +142,16 @@ def get_recommendation(history):
             add = miss * 0.6
         else:
             add = 4 * 0.6 + (miss - 4) * 0.25
+        # 三连及以上连败，冷号分值额外加成，优先抓新冷区间
+        if curr_miss >=3:
+            add *= 1.3
         miss_score[d] = add
 
     hot_counter = Counter(all_digits)
     hot_weight = 0.2 if curr_miss == 0 else 0.12
+    # 三连及以上连败，热号权重降低，减少追旧热号
+    if curr_miss >=3:
+        hot_weight *= 0.6
     hot_score = {d: hot_counter.get(d, 0) * hot_weight for d in range(10)}
 
     transfer_score = {d: 0 for d in range(10)}
@@ -181,9 +185,9 @@ def get_recommendation(history):
             combine = list(set(cold_nums + [reserve_num]))[:3]
             raw_candidate = "".join(sorted([str(x) for x in combine]))
         else:
-            # 两连及以上连败：2热1冷，同时剔除近2期错误数字
-            hot_sort = sorted([(d,s) for d,s in total_score.items() if d not in miss_pred_set], key=lambda x:x[1], reverse=True)
-            cold_sort = sorted([(d,s) for d,s in total_score.items() if d not in miss_pred_set], key=lambda x:x[1])
+            # 两连/三连及以上连败：全部连续错误数字全部规避，冷热权重重新分配
+            hot_sort = sorted([(d,s) for d,s in total_score.items() if d not in all_miss_pred_set], key=lambda x:x[1], reverse=True)
+            cold_sort = sorted([(d,s) for d,s in total_score.items() if d not in all_miss_pred_set], key=lambda x:x[1])
             hot1, hot2 = hot_sort[0][0], hot_sort[1][0]
             cold1 = cold_sort[0][0]
             mix_3 = sorted([hot1, hot2, cold1])
