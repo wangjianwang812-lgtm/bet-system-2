@@ -70,21 +70,28 @@ st.set_page_config(page_title="实时纠错系统 (位移矩阵版)", layout="wi
 if 'history_list' not in st.session_state:
     st.session_state.history_list = []
 
-# 纯初代原版算法，仅修复多连挂重复出号问题，其余全部原生逻辑不变
+# 初代原版核心不变，连败场景新增规避上期错误号码逻辑
 def get_recommendation(history):
     window_len = len(history)
     if window_len < 3:
         return "待分析"
 
     curr_miss = 0
-    for row in reversed(history):
+    miss_pred_set = set()
+    # 统计连败，同时收集最近2次挂单的推荐数字，后续规避
+    for idx, row in enumerate(reversed(history)):
         if row["pred"] == "待分析":
             continue
         if not row["hit"]:
             curr_miss += 1
+            # 仅记录最近两次错误推荐数字
+            if curr_miss <= 2:
+                for c in row["pred"]:
+                    miss_pred_set.add(int(c))
         else:
             break
 
+    # 分级窗口不变
     if curr_miss == 0:
         full_window = history[-5:]
     elif curr_miss == 1:
@@ -167,23 +174,22 @@ def get_recommendation(history):
     raw_candidate = ""
     if not last_item["hit"]:
         if curr_miss == 1:
-            # 单挂1期 完全保留原版逻辑
+            # 单挂1期原版逻辑
             cold_list = sorted([(d, miss_score[d]) for d in range(10)], key=lambda x: x[1], reverse=True)[:2]
             cold_nums = [x[0] for x in cold_list]
             reserve_num = last_period_digits[0]
             combine = list(set(cold_nums + [reserve_num]))[:3]
             raw_candidate = "".join(sorted([str(x) for x in combine]))
         else:
-            # ==========仅修改这里：三连及以上强制冷热混合，不再只取前三高分避免重复号连挂==========
-            hot_sort = sorted(total_score.items(), key=lambda x: x[1], reverse=True)
-            cold_sort = sorted(total_score.items(), key=lambda x: x[1])
-            # 取2热1冷均衡搭配，打破持续追高分重复数字
+            # 两连及以上连败：2热1冷，同时剔除近2期错误数字
+            hot_sort = sorted([(d,s) for d,s in total_score.items() if d not in miss_pred_set], key=lambda x:x[1], reverse=True)
+            cold_sort = sorted([(d,s) for d,s in total_score.items() if d not in miss_pred_set], key=lambda x:x[1])
             hot1, hot2 = hot_sort[0][0], hot_sort[1][0]
             cold1 = cold_sort[0][0]
             mix_3 = sorted([hot1, hot2, cold1])
             raw_candidate = "".join([str(i) for i in mix_3])
     else:
-        # 连中平稳段 完全原版2热1冷逻辑不动
+        # 连中平稳段【完全原版2热1冷逻辑，无任何改动】
         hot_pool = sorted([(d, s) for d, s in total_score.items()], key=lambda x: x[1], reverse=True)[:4]
         miss_pool = sorted([(d, miss_score[d]) for d in range(10)], key=lambda x: x[1], reverse=True)[:4]
         hot_digits = set([x[0] for x in hot_pool])
@@ -210,10 +216,10 @@ def get_recommendation(history):
                     final.append(d)
                     break
         raw_candidate = "".join(sorted([str(d) for d in final[:3]]))
-    # 无任何过滤，原生结果直接返回
+    # 无形态过滤，原生结果直接返回
     return raw_candidate
 
-# 修复报错的统计函数
+# 统计函数不变
 def calc_streak_info(history):
     max_hit_streak = 0
     max_miss_streak = 0
