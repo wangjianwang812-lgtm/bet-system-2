@@ -80,10 +80,6 @@ st.markdown("""
         color:#d13030;
         margin:12px 0 4px 0;
     }
-    .hotcold-text {
-        font-size:15px;
-        color:#444444;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -263,21 +259,6 @@ def calc_streak_info(history):
         "max_miss": max_miss_streak
     }
 
-# 行情冷热文本函数（仅返回文字，不再弹出提示框）
-def get_market_text(history):
-    if len(history) < 3:
-        return "暂无充足数据"
-    win_data = history[-5:]
-    all_d = []
-    for item in win_data:
-        all_d.extend([int(c) for c in item["data"][-4:]])
-    cnt = Counter(all_d)
-    hot_top = sorted(cnt.items(), key=lambda x:x[1], reverse=True)[:4]
-    cold_top = sorted(cnt.items(), key=lambda x:x[1])[:3]
-    hot_str = "、".join(str(i[0]) for i in hot_top)
-    cold_str = "、".join(str(i[0]) for i in cold_top)
-    return f"近5期高频热号：{hot_str}；冷门遗漏数字：{cold_str}"
-
 # 页面布局
 st.markdown("<h2 style='margin-top:0; margin-bottom:12px;'>🎯 实时纠错系统 (永久固定5期窗口)</h2>", unsafe_allow_html=True)
 col1, col2 = st.columns([0.65, 0.35])
@@ -290,8 +271,6 @@ if curr_miss_global >= 2:
     st.session_state.history_list = []
     st.warning("🚨 高危提醒：已出现两连错，系统自动清空全部历史记录并刷新！请重新录入至少3期开奖数据后再分析。")
     st.rerun()
-
-hotcold_text = get_market_text(st.session_state.history_list)
 
 # 左侧统计区域
 with col1:
@@ -328,15 +307,11 @@ with col1:
         </div>
         """, unsafe_allow_html=True)
 
-    # 【修改点1：删除绿底提示框，改为卡片下方纯文字区分亮度】
+    # 仅展示简短状态文字，隐藏窗口说明、冷热数字
     if curr_miss_global == 0:
-        # 平稳长连：绿色加粗高亮
-        st.markdown('<div class="status-smooth">✅ 当前行情平稳长连，永久固定5期短期窗口抓取热号</div>', unsafe_allow_html=True)
+        st.markdown('<div class="status-smooth">✅ 当前行情平稳长连</div>', unsafe_allow_html=True)
     else:
-        # 存在挂单、行情不稳：红色加粗高亮
-        st.markdown('<div class="status-unstable">⚠️ 当前行情震荡不平稳，存在挂单，建议留意冷热区间轮换</div>', unsafe_allow_html=True)
-    # 冷热小号文字跟随下方展示
-    st.markdown(f'<div class="hotcold-text">{hotcold_text}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="status-unstable">⚠️ 当前行情震荡不平稳</div>', unsafe_allow_html=True)
 
     st.divider()
     st.markdown("<h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>📜 历史复盘 (记录锁定)</h3>", unsafe_allow_html=True)
