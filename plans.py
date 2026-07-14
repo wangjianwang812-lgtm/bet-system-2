@@ -76,7 +76,7 @@ st.set_page_config(page_title="固定5周期预测系统", layout="wide")
 if 'history_list' not in st.session_state:
     st.session_state.history_list = []
 
-# 修复：统计时跳过待分析，只计算有真实推荐的期数
+# 统计：跳过待分析，仅真实3码参与连中连错
 def calc_streak_info(history):
     max_hit = 0
     max_miss = 0
@@ -84,7 +84,6 @@ def calc_streak_info(history):
     curr_miss = 0
     for row in history:
         pred = row["pred"]
-        # 待分析不参与连中连错统计
         if pred == "待分析":
             continue
         if row["hit"]:
@@ -102,14 +101,14 @@ def calc_streak_info(history):
         "max_miss": max_miss
     }
 
-# 固定取最新5期
+# 取最新5期运算窗口
 def get_calc_window(history):
     return history[-5:] if len(history)>=5 else history
 
-# 修复：冷热统计只取有效运算窗口，过滤无效初期数据
+# 冷热数字提示
 def get_market_tip(window):
     if len(window) < 3:
-        return "数据不足，录入至少3期有效开奖后显示冷热分析"
+        return "数据不足，录入至少3期4位开奖号后显示冷热分析"
     all_digits = []
     for item in window:
         all_digits.extend([int(c) for c in item["data"]])
@@ -120,9 +119,9 @@ def get_market_tip(window):
     cold_str = "、".join(str(x[0]) for x in cold)
     return f"近5期热号：{hot_str}；冷门数字：{cold_str}"
 
+# 预测核心：不满3期返回待分析
 def get_recommend(history):
     win = get_calc_window(history)
-    # 不足3期直接待分析
     if len(win) < 3:
         return "待分析"
 
@@ -216,17 +215,17 @@ def get_recommend(history):
 streak_data = calc_streak_info(st.session_state.history_list)
 curr_miss = streak_data["curr_miss"]
 
-# 两连错自动清空刷新
+# 两连错自动清空重置
 if curr_miss >= 2:
     st.session_state.history_list = []
-    st.warning("🚨 高危提醒：已出现两连错，系统自动清空全部数据并重置！请重新录入至少3期开奖号码后才能正常分析。")
+    st.warning("🚨 高危提醒：已出现两连错，系统自动清空全部数据并重置！请重新录入至少3期4位开奖号码后才能正常分析。")
     st.rerun()
 
 next_num = get_recommend(st.session_state.history_list)
 calc_win = get_calc_window(st.session_state.history_list)
 tip_text = get_market_tip(calc_win)
 
-st.markdown("<h2>🎯 固定5周期预测系统（两连错自动重置）</h2>", unsafe_allow_html=True)
+st.markdown("<h2>🎯 固定5周期预测系统（两连错自动重置 | 必须4位开奖录入）</h2>", unsafe_allow_html=True)
 col1, col2 = st.columns([0.65, 0.35])
 
 with col1:
@@ -261,23 +260,27 @@ with col1:
             })
         st.table(pd.DataFrame(table_data))
     else:
-        st.info("暂无历史数据，请在右侧录入开奖号")
+        st.info("暂无历史数据，请在右侧录入4位完整开奖号")
 
 with col2:
     st.subheader("💡 实时推荐号码")
     if next_num == "待分析":
         st.markdown('<div style="font-size:44px; font-weight:bold; color:#888;">待分析</div>', unsafe_allow_html=True)
-        st.markdown('<div class="warn-box">提示：需要录入至少3期开奖号码才能生成推荐</div>', unsafe_allow_html=True)
+        st.markdown('<div class="warn-box">提示：需要录入至少3期【4位完整开奖号码】才能生成标准3码推荐</div>', unsafe_allow_html=True)
     else:
         st.markdown(f'<div style="font-size:44px; font-weight:bold; color:#d32f2f;">{next_num}</div>', unsafe_allow_html=True)
 
     st.divider()
     form = st.form("input_form", clear_on_submit=True)
-    user_input = form.text_input("输入本期开奖（示例：91934）")
+    user_input = form.text_input("输入本期4位开奖（示例：0001 / 91934只取后4位）")
     submit_btn = form.form_submit_button("确认录入本期结果")
     if submit_btn and user_input.strip():
-        digit_str = re.search(r"\d+", user_input.strip()).group()
-        # 待分析期数命中默认false
+        digit_raw = re.search(r"\d+", user_input.strip()).group()
+        # 强制截取后4位，不足4位禁止录入
+        if len(digit_raw) < 4:
+            st.error("录入失败！必须输入至少4位数字，单数字/2位数字会导致运算失真，请重新输入完整4位开奖")
+            st.stop()
+        digit_str = digit_raw[-4:]
         hit_flag = False
         if next_num != "待分析":
             hit_flag = any(str(d) in digit_str for d in next_num)
