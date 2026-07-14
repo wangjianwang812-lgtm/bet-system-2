@@ -292,7 +292,7 @@ with col1:
     st.subheader("📈 连中/连败统计")
     s1, s2, s3, s4 = st.columns(4)
 
-    # 恢复原来四个统计色块布局和大小
+    # 恢复原来四个统计色块布局和大小，修复历史最大连败数值缺失
     with s1:
         st.markdown(f"""
         <div class="stat-card stat-green">
@@ -318,6 +318,7 @@ with col1:
         st.markdown(f"""
         <div class="stat-card stat-red">
             <div class="stat-label">历史最大连败</div>
+            <div class="stat-value">{streak_data['max_miss']}</div>
         </div>
         """, unsafe_allow_html=True)
 
