@@ -3,7 +3,6 @@ import pandas as pd
 import re
 from collections import Counter, defaultdict
 
-# 样式
 st.markdown("""
 <style>
     html, body, .stApp {
@@ -74,18 +73,19 @@ st.markdown("""
 
 st.set_page_config(page_title="固定5周期预测系统", layout="wide")
 
-# 初始化缓存
 if 'history_list' not in st.session_state:
     st.session_state.history_list = []
 
-# 统计连中、连错
+# 修复：统计时跳过待分析，只计算有真实推荐的期数
 def calc_streak_info(history):
     max_hit = 0
     max_miss = 0
     curr_hit = 0
     curr_miss = 0
     for row in history:
-        if row["pred"] == "待分析":
+        pred = row["pred"]
+        # 待分析不参与连中连错统计
+        if pred == "待分析":
             continue
         if row["hit"]:
             curr_hit += 1
@@ -102,14 +102,14 @@ def calc_streak_info(history):
         "max_miss": max_miss
     }
 
-# 固定取最新5期作为运算窗口
+# 固定取最新5期
 def get_calc_window(history):
     return history[-5:] if len(history)>=5 else history
 
-# 冷热数字提示
+# 修复：冷热统计只取有效运算窗口，过滤无效初期数据
 def get_market_tip(window):
     if len(window) < 3:
-        return "数据不足，录入至少3期后显示冷热分析"
+        return "数据不足，录入至少3期有效开奖后显示冷热分析"
     all_digits = []
     for item in window:
         all_digits.extend([int(c) for c in item["data"]])
@@ -120,9 +120,9 @@ def get_market_tip(window):
     cold_str = "、".join(str(x[0]) for x in cold)
     return f"近5期热号：{hot_str}；冷门数字：{cold_str}"
 
-# 预测核心函数
 def get_recommend(history):
     win = get_calc_window(history)
+    # 不足3期直接待分析
     if len(win) < 3:
         return "待分析"
 
@@ -213,11 +213,10 @@ def get_recommend(history):
     res = sorted([h1, h2, c1])
     return "".join(str(x) for x in res)
 
-# 计算当前状态
 streak_data = calc_streak_info(st.session_state.history_list)
 curr_miss = streak_data["curr_miss"]
 
-# 核心规则：连续2连错自动清空所有数据 + 页面刷新
+# 两连错自动清空刷新
 if curr_miss >= 2:
     st.session_state.history_list = []
     st.warning("🚨 高危提醒：已出现两连错，系统自动清空全部数据并重置！请重新录入至少3期开奖号码后才能正常分析。")
@@ -227,7 +226,6 @@ next_num = get_recommend(st.session_state.history_list)
 calc_win = get_calc_window(st.session_state.history_list)
 tip_text = get_market_tip(calc_win)
 
-# 页面布局
 st.markdown("<h2>🎯 固定5周期预测系统（两连错自动重置）</h2>", unsafe_allow_html=True)
 col1, col2 = st.columns([0.65, 0.35])
 
@@ -279,7 +277,10 @@ with col2:
     submit_btn = form.form_submit_button("确认录入本期结果")
     if submit_btn and user_input.strip():
         digit_str = re.search(r"\d+", user_input.strip()).group()
-        hit_flag = any(str(d) in digit_str for d in next_num) if next_num != "待分析" else False
+        # 待分析期数命中默认false
+        hit_flag = False
+        if next_num != "待分析":
+            hit_flag = any(str(d) in digit_str for d in next_num)
         new_row = {
             "data": digit_str,
             "pred": next_num,
