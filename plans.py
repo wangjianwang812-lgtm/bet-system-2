@@ -67,20 +67,22 @@ st.markdown("""
     .stTable th {
         background:#b8d8fb !important;
     }
-    /* 历史复盘标题后面的状态文字 */
-    .history-status-smooth {
-        font-size:15px;
-        font-weight:900;
-        color:#168839;
-        margin-left:12px;
-        vertical-align:middle;
+    /* 独立行情状态卡片 绿色平稳/红色震荡 右移远离标题 */
+    .market-status-card {
+        display: inline-block;
+        padding: 8px 18px;
+        border-radius: 12px;
+        color: #fff;
+        font-size: 16px;
+        font-weight: 900;
+        margin: 6px 0 6px 50px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
-    .history-status-unstable {
-        font-size:15px;
-        font-weight:900;
-        color:#d13030;
-        margin-left:12px;
-        vertical-align:middle;
+    .market-status-green {
+        background: linear-gradient(135deg, #22b962, #16a34a);
+    }
+    .market-status-red {
+        background: linear-gradient(135deg, #f23c3c, #d13030);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -309,21 +311,14 @@ with col1:
 
     st.divider()
 
-    # 状态文字放到“历史复盘”标题后面，字体加粗
+    # 历史复盘标题单独一行
+    st.markdown("<h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>📜 历史复盘 (记录锁定)</h3>", unsafe_allow_html=True)
+
+    # 独立彩色状态卡片，右移50px远离标题，绿色平稳/红色震荡
     if curr_miss_global == 0:
-        st.markdown("""
-        <h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>
-            📜 历史复盘 (记录锁定)
-            <span class="history-status-smooth">✅ 当前行情平稳长连</span>
-        </h3>
-        """, unsafe_allow_html=True)
+        st.markdown('<div class="market-status-card market-status-green">✅ 当前行情平稳长连</div>', unsafe_allow_html=True)
     else:
-        st.markdown("""
-        <h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>
-            📜 历史复盘 (记录锁定)
-            <span class="history-status-unstable">⚠️ 当前行情震荡不平稳</span>
-        </h3>
-        """, unsafe_allow_html=True)
+        st.markdown('<div class="market-status-card market-status-red">⚠️ 当前行情震荡不平稳</div>', unsafe_allow_html=True)
 
     if st.session_state.history_list:
         data = []
