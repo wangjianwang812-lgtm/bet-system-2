@@ -67,7 +67,20 @@ st.markdown("""
     .stTable th {
         background:#b8d8fb !important;
     }
-    /* 独立行情状态卡片 绿色平稳/红色震荡 右移远离标题 */
+    /* 历史复盘标题行容器，让标题和状态卡片同行 */
+    .history-header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: -8px;
+        margin-bottom: 6px;
+    }
+    .history-title {
+        font-weight: bold;
+        color: #000000;
+        font-size: 20px;
+    }
+    /* 独立行情状态卡片：放在标题右侧 */
     .market-status-card {
         display: inline-block;
         padding: 8px 18px;
@@ -75,8 +88,8 @@ st.markdown("""
         color: #fff;
         font-size: 16px;
         font-weight: 900;
-        margin: 6px 0 6px 50px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        white-space: nowrap;
     }
     .market-status-green {
         background: linear-gradient(135deg, #22b962, #16a34a);
@@ -305,20 +318,26 @@ with col1:
         st.markdown(f"""
         <div class="stat-card stat-red">
             <div class="stat-label">历史最大连败</div>
-            <div class="stat-value">{streak_data['max_miss']}</div>
         </div>
         """, unsafe_allow_html=True)
 
     st.divider()
 
-    # 历史复盘标题单独一行
-    st.markdown("<h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>📜 历史复盘 (记录锁定)</h3>", unsafe_allow_html=True)
-
-    # 独立彩色状态卡片，右移50px远离标题，绿色平稳/红色震荡
+    # 历史复盘标题行：左侧标题，右侧状态卡片
     if curr_miss_global == 0:
-        st.markdown('<div class="market-status-card market-status-green">✅ 当前行情平稳长连</div>', unsafe_allow_html=True)
+        st.markdown("""
+        <div class="history-header-row">
+            <div class="history-title">📜 历史复盘 (记录锁定)</div>
+            <div class="market-status-card market-status-green">✅ 当前行情平稳长连</div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.markdown('<div class="market-status-card market-status-red">⚠️ 当前行情震荡不平稳</div>', unsafe_allow_html=True)
+        st.markdown("""
+        <div class="history-header-row">
+            <div class="history-title">📜 历史复盘 (记录锁定)</div>
+            <div class="market-status-card market-status-red">⚠️ 当前行情震荡不平稳</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     if st.session_state.history_list:
         data = []
