@@ -39,12 +39,11 @@ st.markdown("""
     /* 卡片统一圆角柔和阴影 */
     div[data-testid="stHorizontalBlock"] {
         gap:12px;
-        align-items:center;
     }
-    /* 统计色块缩小，内部文字大小不变 */
+    /* 统计色块圆角彩色块，恢复原来大小 */
     .stat-card {
         border-radius:14px;
-        padding:10px 6px;
+        padding:16px 8px;
         text-align:center;
         color:#fff;
     }
@@ -52,7 +51,7 @@ st.markdown("""
     .stat-orange {background:#ff9527;}
     .stat-orange2 {background:#f78a25;}
     .stat-red {background:#f23c3c;}
-    .stat-label {font-size:16px;margin-bottom:4px;}
+    .stat-label {font-size:16px;margin-bottom:6px;}
     .stat-value {font-size:40px;font-weight:900;}
     /* 推荐号码红字样式 */
     .pred-num {
@@ -68,18 +67,20 @@ st.markdown("""
     .stTable th {
         background:#b8d8fb !important;
     }
-    /* 同行状态小字 */
-    .side-status-smooth {
-        font-size:14px;
-        font-weight:bold;
+    /* 历史复盘标题后面的状态文字 */
+    .history-status-smooth {
+        font-size:15px;
+        font-weight:900;
         color:#168839;
-        padding-left:10px;
+        margin-left:12px;
+        vertical-align:middle;
     }
-    .side-status-unstable {
-        font-size:14px;
-        font-weight:bold;
+    .history-status-unstable {
+        font-size:15px;
+        font-weight:900;
         color:#d13030;
-        padding-left:10px;
+        margin-left:12px;
+        vertical-align:middle;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -274,10 +275,9 @@ if curr_miss_global >= 2:
 # 左侧统计区域
 with col1:
     st.subheader("📈 连中/连败统计")
-    # 一行5栏：4个色块 + 右侧状态文字
-    s1, s2, s3, s4, status_col = st.columns([1,1,1,1,0.8])
+    s1, s2, s3, s4 = st.columns(4)
 
-    # 缩小后的彩色统计卡片，内部文字大小不变
+    # 恢复原来四个统计色块布局和大小
     with s1:
         st.markdown(f"""
         <div class="stat-card stat-green">
@@ -306,15 +306,25 @@ with col1:
             <div class="stat-value">{streak_data['max_miss']}</div>
         </div>
         """, unsafe_allow_html=True)
-    # 状态文字放在四个色块同一行最右侧
-    with status_col:
-        if curr_miss_global == 0:
-            st.markdown('<div class="side-status-smooth">✅ 当前行情平稳长连</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="side-status-unstable">⚠️ 当前行情震荡不平稳</div>', unsafe_allow_html=True)
 
     st.divider()
-    st.markdown("<h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>📜 历史复盘 (记录锁定)</h3>", unsafe_allow_html=True)
+
+    # 状态文字放到“历史复盘”标题后面，字体加粗
+    if curr_miss_global == 0:
+        st.markdown("""
+        <h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>
+            📜 历史复盘 (记录锁定)
+            <span class="history-status-smooth">✅ 当前行情平稳长连</span>
+        </h3>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>
+            📜 历史复盘 (记录锁定)
+            <span class="history-status-unstable">⚠️ 当前行情震荡不平稳</span>
+        </h3>
+        """, unsafe_allow_html=True)
+
     if st.session_state.history_list:
         data = []
         for i, item in enumerate(reversed(st.session_state.history_list)):
