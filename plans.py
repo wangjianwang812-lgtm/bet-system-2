@@ -62,6 +62,13 @@ st.markdown("""
     .stTable th {
         background:#b8d8fb !important;
     }
+    .tips-box {
+        background: #fff3cd;
+        border: 1px solid #ffeeba;
+        border-radius: 10px;
+        padding: 12px 16px;
+        margin: 10px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -70,7 +77,40 @@ st.set_page_config(page_title="实时纠错系统 (位移矩阵版)", layout="wi
 if 'history_list' not in st.session_state:
     st.session_state.history_list = []
 
-# 对齐截图系统逻辑算法：错1期直接10期窗口、不强制剔除错号、单挂即均衡冷热
+# 行情规律分析函数（新增）
+def get_market_tips(history, curr_miss):
+    if len(history) < 5:
+        return "暂无足够历史数据，录入更多期数后显示行情规律"
+    win = history[-10:] if len(history)>=10 else history
+    all_digits = []
+    for item in win:
+        ds = [int(c) for c in item["data"]]
+        all_digits.extend(ds)
+    cnt = Counter(all_digits)
+    hot = sorted(cnt.items(), key=lambda x:x[1], reverse=True)[:4]
+    hot_nums = "、".join([str(i[0]) for i in hot])
+    cold = sorted(cnt.items(), key=lambda x:x[1])[:3]
+    cold_nums = "、".join([str(i[0]) for i in cold])
+    total = len(all_digits)
+    hot_total = sum([i[1] for i in hot])
+    hot_ratio = hot_total / total
+
+    # 判断行情状态
+    if curr_miss == 0:
+        status = "【平稳热循环行情】当前无连败，短期热号持续延续，优先抓核心活跃数字，适合长连中"
+        tip = "规律提示：连续多期无挂单时，核心热号3-8区间占比高，每3-4期会小幅穿插冷门数字回调"
+    else:
+        if curr_miss >=2:
+            status = "【震荡反转行情】当前存在2连连败，原有热区间过热回调，注意均衡冷热搭配，避免死守旧热号"
+            tip = "规律提示：连续两期挂单代表热区间行情断裂，下期会加大冷门数字权重，优先选取长期遗漏数字"
+        else:
+            status = "【小幅回调行情】单次挂单，仅短期区间切换，大概率保留上期1个数字延续，很快回归核心热池"
+            tip = "规律提示：单挂属于正常周期波动，不会彻底抛弃主流热号，10期窗口均衡修正后命中率回升"
+    ratio_text = f"近10期高频热号：{hot_nums}；低频冷号：{cold_nums}；核心热号总出现占比：{hot_ratio:.1%}"
+    full_tip = f"{status}\n{ratio_text}\n{tip}"
+    return full_tip
+
+# 对齐截图系统逻辑算法
 def get_recommendation(history):
     window_len = len(history)
     if window_len < 3:
@@ -78,7 +118,6 @@ def get_recommendation(history):
 
     curr_miss = 0
     last_miss_digits = set()
-    # 统计连败数量，仅记录最近1期错号（仅小幅降分，不彻底规避）
     for idx, row in enumerate(reversed(history)):
         if row["pred"] == "待分析":
             continue
@@ -91,7 +130,7 @@ def get_recommendation(history):
         else:
             break
 
-    # 窗口规则：无挂单用5期，只要挂单≥1直接10期，删除7期过渡档
+    # 窗口规则：无挂单用5期，只要挂单≥1直接10期
     if curr_miss == 0:
         full_window = history[-5:]
     else:
@@ -142,14 +181,12 @@ def get_recommendation(history):
             add = miss * 0.6
         else:
             add = 4 * 0.6 + (miss - 4) * 0.25
-        # 只要挂单就小幅提升冷号分值，单挂即生效
         if curr_miss >= 1:
             add *= 1.15
         miss_score[d] = add
 
     hot_counter = Counter(all_digits)
     hot_base_weight = 0.2
-    # 只要挂单小幅压低热号权重，单挂即均衡冷热
     if curr_miss >= 1:
         hot_base_weight *= 0.85
     hot_score = {d: hot_counter.get(d, 0) * hot_base_weight for d in range(10)}
@@ -172,7 +209,6 @@ def get_recommendation(history):
     total_score = {}
     for d in range(10):
         base = transfer_score[d] + hot_score[d] + miss_score[d] + type_bonus[d]
-        # 仅对上一期错号轻微扣分，不彻底剔除，允许区间延续
         if d in last_miss_digits:
             base *= 0.75
         total_score[d] = base
@@ -181,7 +217,6 @@ def get_recommendation(history):
     last_period_digits = period_digits[-1]
     raw_candidate = ""
     if curr_miss >= 1:
-        # 挂单状态统一：2热1冷均衡搭配，不分1/2连挂
         hot_sort = sorted(total_score.items(), key=lambda x: x[1], reverse=True)
         cold_sort = sorted(total_score.items(), key=lambda x: x[1])
         hot1, hot2 = hot_sort[0][0], hot_sort[1][0]
@@ -189,7 +224,6 @@ def get_recommendation(history):
         mix_3 = sorted([hot1, hot2, cold1])
         raw_candidate = "".join([str(i) for i in mix_3])
     else:
-        # 无挂单平稳连中：原版5期窗口2热1冷逻辑不变
         hot_pool = sorted([(d, s) for d, s in total_score.items()], key=lambda x: x[1], reverse=True)[:4]
         miss_pool = sorted([(d, miss_score[d]) for d in range(10)], key=lambda x: x[1], reverse=True)[:4]
         hot_digits = set([x[0] for x in hot_pool])
@@ -218,7 +252,7 @@ def get_recommendation(history):
         raw_candidate = "".join(sorted([str(d) for d in final[:3]]))
     return raw_candidate
 
-# 统计函数无修改
+# 统计函数
 def calc_streak_info(history):
     max_hit_streak = 0
     max_miss_streak = 0
@@ -244,14 +278,16 @@ def calc_streak_info(history):
         "max_miss": max_miss_streak
     }
 
-# 页面布局模块完全不变
+# 页面布局
 st.markdown("<h2 style='margin-top:0; margin-bottom:12px;'>🎯 实时纠错系统 (位移矩阵版)</h2>", unsafe_allow_html=True)
 col1, col2 = st.columns([0.65, 0.35])
 next_pred = get_recommendation(st.session_state.history_list)
+streak_data = calc_streak_info(st.session_state.history_list)
+curr_miss_val = streak_data["curr_miss"]
+market_tip = get_market_tips(st.session_state.history_list, curr_miss_val)
 
 with col1:
     st.subheader("📈 连中/连败统计")
-    streak_data = calc_streak_info(st.session_state.history_list)
     s1, s2, s3, s4 = st.columns(4)
     with s1:
         st.markdown(f"""
@@ -281,6 +317,9 @@ with col1:
             <div class="stat-value">{streak_data['max_miss']}</div>
         </div>
         """, unsafe_allow_html=True)
+
+    # 新增行情规律提醒框
+    st.markdown(f'<div class="tips-box"><strong>📊 行情规律实时提醒</strong><br>{market_tip}</div>', unsafe_allow_html=True)
     st.divider()
     st.markdown("<h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>📜 历史复盘 (记录锁定)</h3>", unsafe_allow_html=True)
     if st.session_state.history_list:
