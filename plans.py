@@ -3,7 +3,7 @@ import pandas as pd
 import re
 from collections import Counter, defaultdict
 
-# 全局浅蓝色CSS样式
+# 页面样式CSS
 st.markdown("""
 <style>
     html, body, .stApp {
@@ -70,36 +70,30 @@ st.set_page_config(page_title="实时纠错系统 (位移矩阵版)", layout="wi
 if 'history_list' not in st.session_state:
     st.session_state.history_list = []
 
-# 强化版算法：2连挂全开风控 + 抑制连续重复推荐数字扣分
+# 对齐截图系统逻辑算法：错1期直接10期窗口、不强制剔除错号、单挂即均衡冷热
 def get_recommendation(history):
     window_len = len(history)
     if window_len < 3:
         return "待分析"
 
     curr_miss = 0
-    all_miss_pred_set = set()
-    last_two_pred_digits = set()
-    # 收集连续挂单全部错号 + 提取最近两期推荐数字用于重复扣分
+    last_miss_digits = set()
+    # 统计连败数量，仅记录最近1期错号（仅小幅降分，不彻底规避）
     for idx, row in enumerate(reversed(history)):
         if row["pred"] == "待分析":
             continue
         if not row["hit"]:
             curr_miss += 1
             pred_digits = [int(c) for c in row["pred"]]
-            for d in pred_digits:
-                all_miss_pred_set.add(d)
-            # 仅保存最近两期挂单推荐数字
-            if curr_miss <= 2:
+            if curr_miss == 1:
                 for d in pred_digits:
-                    last_two_pred_digits.add(d)
+                    last_miss_digits.add(d)
         else:
             break
 
-    # 分级窗口规则不变
+    # 窗口规则：无挂单用5期，只要挂单≥1直接10期，删除7期过渡档
     if curr_miss == 0:
         full_window = history[-5:]
-    elif curr_miss == 1:
-        full_window = history[-7:]
     else:
         full_window = history[-10:]
 
@@ -148,17 +142,17 @@ def get_recommendation(history):
             add = miss * 0.6
         else:
             add = 4 * 0.6 + (miss - 4) * 0.25
-        # 2连挂及以上冷号加成
-        if curr_miss >=2:
-            add *= 1.3
+        # 只要挂单就小幅提升冷号分值，单挂即生效
+        if curr_miss >= 1:
+            add *= 1.15
         miss_score[d] = add
 
     hot_counter = Counter(all_digits)
-    hot_weight = 0.2 if curr_miss == 0 else 0.12
-    # 2连挂及以上压低热号权重
-    if curr_miss >=2:
-        hot_weight *= 0.6
-    hot_score = {d: hot_counter.get(d, 0) * hot_weight for d in range(10)}
+    hot_base_weight = 0.2
+    # 只要挂单小幅压低热号权重，单挂即均衡冷热
+    if curr_miss >= 1:
+        hot_base_weight *= 0.85
+    hot_score = {d: hot_counter.get(d, 0) * hot_base_weight for d in range(10)}
 
     transfer_score = {d: 0 for d in range(10)}
     last2_nums = period_digits[-1] + period_digits[-2]
@@ -178,32 +172,24 @@ def get_recommendation(history):
     total_score = {}
     for d in range(10):
         base = transfer_score[d] + hot_score[d] + miss_score[d] + type_bonus[d]
-        # 新增核心抑制规则：最近两期连续推荐过的数字大幅扣分，规避重复区间
-        if curr_miss >= 2 and d in last_two_pred_digits:
-            base *= 0.45
+        # 仅对上一期错号轻微扣分，不彻底剔除，允许区间延续
+        if d in last_miss_digits:
+            base *= 0.75
         total_score[d] = base
 
     last_item = full_window[-1]
     last_period_digits = period_digits[-1]
     raw_candidate = ""
-    if not last_item["hit"]:
-        if curr_miss == 1:
-            # 单挂1期原版温和逻辑不变
-            cold_list = sorted([(d, miss_score[d]) for d in range(10)], key=lambda x: x[1], reverse=True)[:2]
-            cold_nums = [x[0] for x in cold_list]
-            reserve_num = last_period_digits[0]
-            combine = list(set(cold_nums + [reserve_num]))[:3]
-            raw_candidate = "".join(sorted([str(x) for x in combine]))
-        else:
-            # 2连及以上连败：全量规避错号+冷热强制拆分
-            hot_sort = sorted([(d,s) for d,s in total_score.items() if d not in all_miss_pred_set], key=lambda x:x[1], reverse=True)
-            cold_sort = sorted([(d,s) for d,s in total_score.items() if d not in all_miss_pred_set], key=lambda x:x[1])
-            hot1, hot2 = hot_sort[0][0], hot_sort[1][0]
-            cold1 = cold_sort[0][0]
-            mix_3 = sorted([hot1, hot2, cold1])
-            raw_candidate = "".join([str(i) for i in mix_3])
+    if curr_miss >= 1:
+        # 挂单状态统一：2热1冷均衡搭配，不分1/2连挂
+        hot_sort = sorted(total_score.items(), key=lambda x: x[1], reverse=True)
+        cold_sort = sorted(total_score.items(), key=lambda x: x[1])
+        hot1, hot2 = hot_sort[0][0], hot_sort[1][0]
+        cold1 = cold_sort[0][0]
+        mix_3 = sorted([hot1, hot2, cold1])
+        raw_candidate = "".join([str(i) for i in mix_3])
     else:
-        # 无连败平稳连中：原版2热1冷逻辑完全不动
+        # 无挂单平稳连中：原版5期窗口2热1冷逻辑不变
         hot_pool = sorted([(d, s) for d, s in total_score.items()], key=lambda x: x[1], reverse=True)[:4]
         miss_pool = sorted([(d, miss_score[d]) for d in range(10)], key=lambda x: x[1], reverse=True)[:4]
         hot_digits = set([x[0] for x in hot_pool])
@@ -230,10 +216,9 @@ def get_recommendation(history):
                     final.append(d)
                     break
         raw_candidate = "".join(sorted([str(d) for d in final[:3]]))
-    # 无号码过滤，原生打分结果直接返回
     return raw_candidate
 
-# 统计函数无改动
+# 统计函数无修改
 def calc_streak_info(history):
     max_hit_streak = 0
     max_miss_streak = 0
@@ -259,7 +244,7 @@ def calc_streak_info(history):
         "max_miss": max_miss_streak
     }
 
-# UI、录入、表格页面完全不变
+# 页面布局模块完全不变
 st.markdown("<h2 style='margin-top:0; margin-bottom:12px;'>🎯 实时纠错系统 (位移矩阵版)</h2>", unsafe_allow_html=True)
 col1, col2 = st.columns([0.65, 0.35])
 next_pred = get_recommendation(st.session_state.history_list)
@@ -329,7 +314,7 @@ with col2:
                 snapshot = {
                     "data": nums[-1][-5:],
                     "pred": next_pred,
-                    "hit": any(d in nums[-1][-4:] for d in next_pred) if next_pred != "待分析" else False
+                    "hit": any(str(d) in next_pred for d in nums[-1][-4:]) if next_pred != "待分析" else False
                 }
                 st.session_state.history_list.append(snapshot)
                 st.rerun()
