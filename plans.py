@@ -67,27 +67,22 @@ st.markdown("""
     .stTable th {
         background:#b8d8fb !important;
     }
-    /* 新增提示框样式 */
-    .tips-box {
-        background: #fff3cd;
-        border: 1px solid #ffeeba;
-        border-radius: 10px;
-        padding: 12px 16px;
-        margin: 10px 0;
+    /* 状态文字样式 */
+    .status-smooth {
+        font-size:20px;
+        font-weight:bold;
+        color:#168839;
+        margin:12px 0 4px 0;
     }
-    .warn-box {
-        background: #ffebee;
-        border: 1px solid #ef9a9a;
-        border-radius: 10px;
-        padding: 12px 16px;
-        margin: 10px 0;
+    .status-unstable {
+        font-size:20px;
+        font-weight:bold;
+        color:#d13030;
+        margin:12px 0 4px 0;
     }
-    .monitor-box {
-        background: #e8f5e9;
-        border: 1px solid #a5d6a7;
-        border-radius: 10px;
-        padding: 12px 16px;
-        margin: 10px 0;
+    .hotcold-text {
+        font-size:15px;
+        color:#444444;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -99,7 +94,7 @@ st.set_page_config(page_title="实时纠错系统 (永久固定5期窗口)", lay
 if 'history_list' not in st.session_state:
     st.session_state.history_list = []
 
-# 【仅改动窗口：永久固定5期，删除7/10期分支，其余打分逻辑完全沿用你的原版】
+# 永久固定5期窗口，其余打分逻辑完全沿用原版
 def get_recommendation(history):
     window_len = len(history)
     if window_len < 3:
@@ -115,7 +110,7 @@ def get_recommendation(history):
         else:
             break
 
-    # 核心修改：无论连错多少，统一固定取最新5期数据计算
+    # 核心：永久固定取最新5期数据计算
     full_window = history[-5:]
 
     all_digits = []
@@ -268,11 +263,10 @@ def calc_streak_info(history):
         "max_miss": max_miss_streak
     }
 
-# 新增：行情冷热提醒函数（同步固定5期窗口统计）
-def get_market_tip(history):
+# 行情冷热文本函数（仅返回文字，不再弹出提示框）
+def get_market_text(history):
     if len(history) < 3:
-        return "暂无充足数据，录入更多开奖后显示冷热区间提示"
-    # 统一固定读取5期窗口做冷热统计
+        return "暂无充足数据"
     win_data = history[-5:]
     all_d = []
     for item in win_data:
@@ -282,15 +276,7 @@ def get_market_tip(history):
     cold_top = sorted(cnt.items(), key=lambda x:x[1])[:3]
     hot_str = "、".join(str(i[0]) for i in hot_top)
     cold_str = "、".join(str(i[0]) for i in cold_top)
-    streak_temp = calc_streak_info(history)
-    curr_miss_temp = streak_temp["curr_miss"]
-    if curr_miss_temp == 0:
-        status = "✅ 平稳连中周期，永久固定5期短期窗口抓热号"
-    elif curr_miss_temp == 1:
-        status = "⚠️ 单次挂单，仍使用5期窗口，再错1次自动清空全部数据重置"
-    else:
-        status = "🚨 两连错风险，系统会自动清空全部记录刷新"
-    return f"{status}\n近5期高频热号：{hot_str}；冷门遗漏数字：{cold_str}"
+    return f"近5期高频热号：{hot_str}；冷门遗漏数字：{cold_str}"
 
 # 页面布局
 st.markdown("<h2 style='margin-top:0; margin-bottom:12px;'>🎯 实时纠错系统 (永久固定5期窗口)</h2>", unsafe_allow_html=True)
@@ -305,9 +291,9 @@ if curr_miss_global >= 2:
     st.warning("🚨 高危提醒：已出现两连错，系统自动清空全部历史记录并刷新！请重新录入至少3期开奖数据后再分析。")
     st.rerun()
 
-market_tip_text = get_market_tip(st.session_state.history_list)
+hotcold_text = get_market_text(st.session_state.history_list)
 
-# 左侧统计+历史表格
+# 左侧统计区域
 with col1:
     st.subheader("📈 连中/连败统计")
     s1, s2, s3, s4 = st.columns(4)
@@ -342,13 +328,15 @@ with col1:
         </div>
         """, unsafe_allow_html=True)
 
-    # 行情提醒框
+    # 【修改点1：删除绿底提示框，改为卡片下方纯文字区分亮度】
     if curr_miss_global == 0:
-        st.markdown(f'<div class="monitor-box">{market_tip_text}</div>', unsafe_allow_html=True)
-    elif curr_miss_global == 1:
-        st.markdown(f'<div class="tips-box">{market_tip_text}</div>', unsafe_allow_html=True)
+        # 平稳长连：绿色加粗高亮
+        st.markdown('<div class="status-smooth">✅ 当前行情平稳长连，永久固定5期短期窗口抓取热号</div>', unsafe_allow_html=True)
     else:
-        st.markdown(f'<div class="warn-box">{market_tip_text}</div>', unsafe_allow_html=True)
+        # 存在挂单、行情不稳：红色加粗高亮
+        st.markdown('<div class="status-unstable">⚠️ 当前行情震荡不平稳，存在挂单，建议留意冷热区间轮换</div>', unsafe_allow_html=True)
+    # 冷热小号文字跟随下方展示
+    st.markdown(f'<div class="hotcold-text">{hotcold_text}</div>', unsafe_allow_html=True)
 
     st.divider()
     st.markdown("<h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>📜 历史复盘 (记录锁定)</h3>", unsafe_allow_html=True)
