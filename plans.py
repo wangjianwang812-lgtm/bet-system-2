@@ -51,6 +51,7 @@ st.markdown("""
     .stat-orange {background:#ff9527;}
     .stat-orange2 {background:#f78a25;}
     .stat-red {background:#f23c3c;}
+    .stat-pink {background:#ec407a;}
     .stat-label {font-size:16px;margin-bottom:6px;}
     .stat-value {font-size:40px;font-weight:900;}
     /* 推荐号码红字样式 */
@@ -316,7 +317,7 @@ with col1:
         """, unsafe_allow_html=True)
     with s4:
         st.markdown(f"""
-        <div class="stat-card stat-red">
+        <div class="stat-card stat-pink">
             <div class="stat-label">历史最大连败</div>
             <div class="stat-value">{streak_data['max_miss']}</div>
         </div>
