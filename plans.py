@@ -108,10 +108,11 @@ st.set_page_config(page_title="实时纠错系统 (永久固定5期窗口)", lay
 if 'history_list' not in st.session_state:
     st.session_state.history_list = []
 
-# 永久固定5期窗口，其余打分逻辑完全沿用原版
+# 永久固定5期窗口，修改：不足5期显示待分析
 def get_recommendation(history):
     window_len = len(history)
-    if window_len < 3:
+    # 关键修改：录入条数小于5条，全部返回待分析
+    if window_len < 5:
         return "待分析"
 
     # 统计当前连败数
@@ -285,7 +286,7 @@ curr_miss_global = streak_data["curr_miss"]
 # 两连错自动清空重置逻辑
 if curr_miss_global >= 2:
     st.session_state.history_list = []
-    st.warning("🚨 高危提醒：已出现两连错，系统自动清空全部历史记录并刷新！请重新录入至少3期开奖数据后再分析。")
+    st.warning("🚨 高危提醒：已出现两连错，系统自动清空全部历史记录并刷新！请重新录入至少5期开奖数据后再分析。")
     st.rerun()
 
 # 左侧统计区域
@@ -293,7 +294,7 @@ with col1:
     st.subheader("📈 连中/连败统计")
     s1, s2, s3, s4 = st.columns(4)
 
-    # 恢复原来四个统计色块布局和大小，修复历史最大连败数值缺失
+    # 四个统计色块，历史最大连败粉色
     with s1:
         st.markdown(f"""
         <div class="stat-card stat-green">
@@ -363,7 +364,7 @@ with col2:
         <div class="pred-num">{next_pred}</div>
         """, unsafe_allow_html=True)
     else:
-        st.info("💡 录入 3 期数据后开启预判")
+        st.info("💡 录入满5期数据后开启预判")
 
     with st.form("input_form", clear_on_submit=True):
         user_input = st.text_input("请输入本期开奖 (如: 91934):")
@@ -385,4 +386,3 @@ with col2:
                 st.rerun()
     if st.button("手动清空记录"):
         st.session_state.history_list = []
-        st.rerun()
