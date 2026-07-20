@@ -70,7 +70,7 @@ if 'global_max_hit' not in st.session_state:
 if 'global_max_miss' not in st.session_state:
     st.session_state.global_max_miss = 0
 
-# --- 2. 核心算法：位移矩阵 + 连挂纠错模型 ---
+# --- 2. 核心算法：位移矩阵（已移除连败换号打折逻辑） ---
 def get_recommendation(history):
     active_history = history[-15:]
     if len(active_history) < 3: return "待分析"
@@ -84,10 +84,7 @@ def get_recommendation(history):
         target = str((last_digit + offset) % 10)
         scores[target] += 2.0
 
-    if len(active_history) >= 2:
-        if not active_history[-1]['hit'] and not active_history[-2]['hit']:
-            for d in scores:
-                scores[d] *= 0.8
+    # ========== 已完整删除连续两期不中打折换号代码 ==========
 
     top3 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]
     result = "".join(sorted([item[0] for item in top3]))
