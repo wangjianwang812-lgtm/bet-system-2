@@ -64,73 +64,72 @@ st.set_page_config(page_title="实时纠错系统 (位移矩阵版)", layout="wi
 # 初始化存储
 if 'history_list' not in st.session_state:
     st.session_state.history_list = []
+# 全局极值：仅自动两连错/手动清空时才归零
+if 'global_max_hit' not in st.session_state:
+    st.session_state.global_max_hit = 0
+if 'global_max_miss' not in st.session_state:
+    st.session_state.global_max_miss = 0
 
 # --- 2. 核心算法：位移矩阵 + 连挂纠错模型 ---
 def get_recommendation(history):
-    # 自动滑窗：只取最近 15 期作为分析窗口
     active_history = history[-15:]
     if len(active_history) < 3: return "待分析"
 
-    # 频率分析：最近 5 期赋予高权重 (1.5)，15 期赋予基准权重
     recent_5 = "".join([item['data'][-4:] for item in active_history[-5:]])
     freq = Counter(recent_5)
     scores = {str(d): float(freq.get(str(d), 0)) * 1.5 for d in range(10)}
 
-    # 顺位惯性：上期号码的相邻位有极大概率出现
     last_digit = int(active_history[-1]['data'][-1])
     for offset in [-1, 0, 1]:
         target = str((last_digit + offset) % 10)
         scores[target] += 2.0
 
-    # 连挂纠错机制：如果连续挂了 2 期，对当前的 top3 评分进行打折 (逼迫换号)
     if len(active_history) >= 2:
         if not active_history[-1]['hit'] and not active_history[-2]['hit']:
             for d in scores:
                 scores[d] *= 0.8
 
-    # 取前三名作为结果
     top3 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]
     result = "".join(sorted([item[0] for item in top3]))
-
     return result
 
-# 统计连中、连败数据函数，仅增加跳过待分析判断，其余统计逻辑完全原样
+# 计算当前连中/连败，同步更新全局历史极值
 def calc_streak_info(history):
-    max_hit_streak = 0
-    max_miss_streak = 0
     curr_hit = 0
     curr_miss = 0
+    temp_max_hit = 0
+    temp_max_miss = 0
     for row in history:
-        # 仅新增：待分析记录直接跳过，不参与任何连中/连败计数
         if row["pred"] == "待分析":
             continue
-        # 下面原有统计逻辑完全不动，一丝未改
         if row["hit"]:
             curr_hit += 1
             curr_miss = 0
-            if curr_hit > max_hit_streak:
-                max_hit_streak = curr_hit
+            temp_max_hit = max(temp_max_hit, curr_hit)
         else:
             curr_miss += 1
             curr_hit = 0
-            if curr_miss > max_miss_streak:
-                max_miss_streak = curr_miss
+            temp_max_miss = max(temp_max_miss, curr_miss)
+
+    # 更新全局最大（日常只增不减，不清零）
+    if temp_max_hit > st.session_state.global_max_hit:
+        st.session_state.global_max_hit = temp_max_hit
+    if temp_max_miss > st.session_state.global_max_miss:
+        st.session_state.global_max_miss = temp_max_miss
+
     return {
         "curr_hit": curr_hit,
         "curr_miss": curr_miss,
-        "max_hit": max_hit_streak,
-        "max_miss": max_miss_streak
+        "max_hit": st.session_state.global_max_hit,
+        "max_miss": st.session_state.global_max_miss
     }
 
 # --- 3. 界面布局 ---
-# 小号紧凑主标题
 st.markdown("<h2 style='margin-top:0; margin-bottom:6px;'>🎯 实时纠错系统 (位移矩阵版)</h2>", unsafe_allow_html=True)
 col1, col2 = st.columns([0.65, 0.35])
-
-# 计算下期推荐
 next_pred = get_recommendation(st.session_state.history_list)
 
-# ========== 左侧栏：先放连中连败统计，再放历史复盘 ==========
+# ========== 左侧栏 ==========
 with col1:
     st.subheader("📈 连中/连败统计")
     streak_data = calc_streak_info(st.session_state.history_list)
@@ -143,7 +142,6 @@ with col1:
             <div class="value">{streak_data['curr_hit']}</div>
         </div>
         """, unsafe_allow_html=True)
-
     with s2:
         st.markdown(f"""
         <div class="stat-card stat-card-2">
@@ -151,7 +149,6 @@ with col1:
             <div class="value">{streak_data['curr_miss']}</div>
         </div>
         """, unsafe_allow_html=True)
-
     with s3:
         st.markdown(f"""
         <div class="stat-card stat-card-3">
@@ -159,7 +156,6 @@ with col1:
             <div class="value">{streak_data['max_hit']}</div>
         </div>
         """, unsafe_allow_html=True)
-
     with s4:
         st.markdown(f"""
         <div class="stat-card stat-card-4">
@@ -169,7 +165,6 @@ with col1:
         """, unsafe_allow_html=True)
 
     st.divider()
-    # 历史复盘标题：margin-top设为负数，紧贴上方分隔横线，紧凑布局
     st.markdown("<h3 style='font-weight:bold; color:#000000; margin-top:-8px; margin-bottom:6px;'>📜 历史复盘 (记录锁定)</h3>", unsafe_allow_html=True)
 
     if st.session_state.history_list:
@@ -185,11 +180,10 @@ with col1:
     else:
         st.info("暂无数据，请在右侧录入...")
 
-# ========== 右侧栏：只保留预判、录入、清空按钮 ==========
+# ========== 右侧栏 ==========
 with col2:
     st.subheader("💡 实时预判")
     if next_pred != "待分析":
-        # 文字保持深色，推荐号码改为红色加粗，布局间距和原metric一致
         st.markdown(f"""
         <div style="font-size: 18px; color:#222222; margin-bottom:4px;">下一期推荐号码:</div>
         <div style="font-size:42px; color:#ff0000; font-weight:bold;">{next_pred}</div>
@@ -204,7 +198,6 @@ with col2:
         if submitted and user_input:
             nums = re.findall(r'\d+', user_input)
             if nums:
-                # 快照存储：录入瞬间锁定推荐码和结果
                 snapshot = {
                     "data": nums[-1][-5:],
                     "pred": next_pred,
@@ -212,22 +205,26 @@ with col2:
                 }
                 st.session_state.history_list.append(snapshot)
 
-                # 自动滑窗：保持最近 20 期，防止历史干扰
+                # 明细始终只保留最近20条，旧明细删除，但全局极值保留
                 if len(st.session_state.history_list) > 20:
                     st.session_state.history_list.pop(0)
 
-                # 新增逻辑：连续2次不中自动清空全部记录
+                # 连续错2期：明细 + 全局最大极值 全部清空归零
                 full_history = st.session_state.history_list
                 valid_records = [r for r in full_history if r["pred"] != "待分析"]
                 if len(valid_records) >= 2:
                     last1 = valid_records[-1]
                     last2 = valid_records[-2]
                     if (not last1["hit"]) and (not last2["hit"]):
-                        st.warning("⚠️ 已连续预判错误2期，系统自动清空全部记录，重新开始统计！")
+                        st.warning("⚠️ 已连续预判错误2期，系统自动清空全部记录与历史极值，重新开始统计！")
                         st.session_state.history_list = []
-
+                        st.session_state.global_max_hit = 0
+                        st.session_state.global_max_miss = 0
                 st.rerun()
 
+    # 手动清空：明细 + 全局最大极值 全部清空归零
     if st.button("手动清空记录"):
         st.session_state.history_list = []
+        st.session_state.global_max_hit = 0
+        st.session_state.global_max_miss = 0
         st.rerun()
